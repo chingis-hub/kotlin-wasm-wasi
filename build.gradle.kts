@@ -397,7 +397,7 @@ val unzipWasmtime = run {
 
         from(if (archive.extension == "zip") zipTree(archive) else tarTree(XzArchiver(archive)))
 
-        into(downloadedTools)
+        into(downloadedTools.resolve(wasmtimeArtifactName))
     }
 }
 
