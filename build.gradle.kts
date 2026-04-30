@@ -488,3 +488,27 @@ tasks.withType<NodeJsExec>().all {
         )
     }
 }
+
+// Compiles the WASI binary and runs it with Wasmtime, forwarding stdin/stdout.
+// WASI _start entrypoint (= main()) is called directly.
+tasks.register("runWasm", Exec::class) {
+    group = "run"
+    description = "Compiles and runs the Wasm binary with Wasmtime (stdin echo loop)"
+
+    dependsOn(unzipWasmtime, "compileDevelopmentExecutableKotlinWasmWasi")
+
+    val wasmtimeDir = unzipWasmtime.get().destinationDir.resolve(wasmtimeArtifactName)
+    executable = wasmtimeDir.resolve(
+        if (currentOsType.name == OsName.WINDOWS) "wasmtime.exe" else "wasmtime"
+    ).absolutePath
+
+    args(
+        "-W", "function-references,gc,exceptions",
+        layout.buildDirectory.file(
+            "compileSync/wasmWasi/main/developmentExecutable/kotlin/${rootProject.name}.wasm"
+        ).get().asFile.absolutePath
+    )
+
+    standardInput = System.`in`
+    environment("RUST_BACKTRACE", "full")
+}
