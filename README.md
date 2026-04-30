@@ -25,5 +25,3 @@ Compiles if needed, then runs the binary with Wasmtime. Type lines and press Ent
 ```bash
 ./gradlew runWasm --console=plain
 ```
-
-=
