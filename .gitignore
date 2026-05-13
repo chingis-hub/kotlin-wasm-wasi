@@ -26,3 +26,5 @@
 .idea
 .kotlin
 /.claude/settings.local.json
+/task1/build/
+/task2/build/
