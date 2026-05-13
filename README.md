@@ -9,7 +9,7 @@ Two independent subprojects, each compiled to its own `.wasm` binary:
 | Subproject | Source | What it does |
 |------------|--------|--------------|
 | `task1` | `Main.kt` | Reads lines from stdin and echoes each back with a prefix |
-| `task2` | `Task2.kt` | Copies `dummy_file.pdf` → `output.txt` using raw WASI file I/O |
+| `task2` | `Task2.kt` | Copies any file using raw WASI file I/O; dir, input and output are runtime arguments |
 
 Wasmtime is downloaded once by the root project and shared between both tasks.
 
@@ -33,14 +33,16 @@ Wasm received: <your input>
 
 ## Task 2 — file copy
 
-Uses raw WASI syscalls: `path_open`, `fd_read`, `fd_write`, `fd_close`. Reads in 4 KB chunks. The `--dir=C:\kotlin` flag grants the sandbox access to that directory.
+Copies any file using raw WASI syscalls: `path_open`, `fd_read`, `fd_write`, `fd_close`. Reads in 4 KB chunks.
+
+All three parameters are passed at runtime via Gradle properties and forwarded to the wasm binary as `argv[1..3]`, read with the `args_sizes_get` and `args_get` WASI syscalls. The directory is also passed as `--dir` to wasmtime to grant sandbox access to that path.
 
 **Build:**
-```bash
+```text
 ./gradlew :task2:compileDevelopmentExecutableKotlinWasmWasi
 ```
 
-**Run:**
-```bash
-./gradlew :task2:runTask2
+**Run**
+```
+./gradlew :task2:runTask2 "-Pwasmdir=C:\kotlin" "-Pinput=dummy_file.pdf" "-Poutput=output.pdf"
 ```

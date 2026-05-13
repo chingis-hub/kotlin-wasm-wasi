@@ -10,10 +10,69 @@ private const val DIR_FD = 3      // first --dir pre-opened directory fd
 private const val CHUNK_SIZE = 4096
 
 fun main() {
-    copyFile("dummy_file.pdf", "output.txt")
+    val args = readArgs()
+    // argv[0] = module name (wasmtime), argv[1] = dir, argv[2] = input file, argv[3] = output file
+    val dir   = if (args.size > 1) args[1] else "<no dir arg>"
+    val input = if (args.size > 2) args[2] else "<no input arg>"
+    val output = if (args.size > 3) args[3] else "<no output arg>"
+    println("Working directory: $dir")
+    copyFile(input, output)
 }
 
-// opens a file or directory relative to a pre-opened directory fd
+// --- argv syscalls ---
+
+// Step 1: get the number of arguments and the total byte size of all argument strings
+// (including their null terminators) so we know how much memory to allocate for args_get.
+@WasmImport("wasi_snapshot_preview1", "args_sizes_get")
+private external fun wasiRawArgsSizesGet(argcPtr: Int, argvBufSizePtr: Int): Int
+
+// Step 2: fill two buffers:
+//   argvPtr    — array of argc pointers (each i32), one per argument;
+//                each pointer is an absolute wasm memory address pointing into argvBuf
+//   argvBufPtr — flat byte buffer with all argument strings laid out back-to-back,
+//                each null-terminated
+@WasmImport("wasi_snapshot_preview1", "args_get")
+private external fun wasiRawArgsGet(argvPtr: Int, argvBufPtr: Int): Int
+
+@OptIn(UnsafeWasmMemoryApi::class)
+private fun readArgs(): List<String> = withScopedMemoryAllocator { allocator ->
+    val argcPtr = allocator.allocate(4)
+    val argvBufSizePtr = allocator.allocate(4)
+    val ret = wasiRawArgsSizesGet(argcPtr.address.toInt(), argvBufSizePtr.address.toInt())
+    if (ret != 0) return@withScopedMemoryAllocator emptyList()
+
+    val argc = argcPtr.loadInt()
+    val argvBufSize = argvBufSizePtr.loadInt()
+    if (argc == 0 || argvBufSize == 0) return@withScopedMemoryAllocator emptyList()
+
+    // argv array: argc × 4 bytes (one i32 pointer per argument)
+    val argvMem = allocator.allocate(argc * 4)
+    // flat buffer that will hold all the actual string bytes
+    val argvBuf = allocator.allocate(argvBufSize)
+
+    wasiRawArgsGet(argvMem.address.toInt(), argvBuf.address.toInt())
+
+    val result = mutableListOf<String>()
+    for (i in 0 until argc) {
+        // read the i-th pointer from the argv array — it's an absolute address inside argvBuf
+        val strAddr = Pointer(argvMem.address + (i * 4).toUInt()).loadInt().toUInt()
+
+        // walk the null-terminated string at that address byte by byte
+        val sb = StringBuilder()
+        var offset = 0u
+        while (true) {
+            val byte = Pointer(strAddr + offset).loadByte()
+            if (byte == 0.toByte()) break
+            sb.append(byte.toInt().toChar())
+            offset++
+        }
+        result.add(sb.toString())
+    }
+    result
+}
+
+// --- file I/O syscalls ---
+
 @WasmImport("wasi_snapshot_preview1", "path_open")
 private external fun wasiRawPathOpen(
     fd: Int, dirflags: Int,
@@ -21,7 +80,7 @@ private external fun wasiRawPathOpen(
     oflags: Int,
     fsRightsBase: Long, fsRightsInheriting: Long,
     fdflags: Int,
-    openedFdPtr: Int  // out: new fd written here
+    openedFdPtr: Int
 ): Int
 
 @WasmImport("wasi_snapshot_preview1", "fd_read")
